@@ -1,0 +1,126 @@
+{
+  "title": "Asterisk AMI + HT503",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Asterisk Manager Interface",
+        "description": "Liga o Home Assistant diretamente ao Asterisk através do AMI. A ligação é testada antes de ser guardada.",
+        "data": {
+          "host": "Servidor Asterisk / Issabel",
+          "port": "Porta AMI",
+          "username": "Utilizador AMI",
+          "password": "Password AMI"
+        },
+        "data_description": {
+          "host": "Endereço IP ou hostname do servidor Asterisk/Issabel.",
+          "port": "O AMI utiliza normalmente a porta TCP 5038.",
+          "username": "Utilizador Manager configurado no manager.conf / manager_custom.conf.",
+          "password": "Secret do utilizador AMI."
+        }
+      },
+      "features": {
+        "title": "Dispositivos, entidades e HT503",
+        "description": "Escolhe os protocolos, extensões e entidades. Se não selecionares nenhuma extensão, são incluídas todas as extensões descobertas dos protocolos ativados.",
+        "data": {
+          "discover_pjsip": "Descobrir endpoints PJSIP",
+          "discover_sip": "Descobrir peers SIP antigos (chan_sip)",
+          "selected_endpoints": "Extensões a monitorizar",
+          "extra_endpoints": "Endpoints manuais adicionais",
+          "enable_device_state": "Criar sensores de estado",
+          "enable_registered": "Criar sensores de registo",
+          "enable_connected_line": "Criar sensores de chamada ligada",
+          "enable_dtmf": "Criar sensores DTMF",
+          "enable_ht503": "Ativar Grandstream HT503"
+        },
+        "data_description": {
+          "selected_endpoints": "Seleciona uma ou várias extensões descobertas. Deixa vazio para usar todas.",
+          "extra_endpoints": "Opcional. Indica endpoints adicionais separados por vírgulas, por exemplo PJSIP/200,SIP/300. Um número sem tecnologia é tratado como PJSIP.",
+          "enable_ht503": "Ao ativar, o passo seguinte pede o IP e a password do HT503."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Voltar a autenticar o AMI",
+        "description": "Atualiza as credenciais do Asterisk Manager Interface.",
+        "data": {
+          "username": "Utilizador AMI",
+          "password": "Password AMI"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar Asterisk AMI",
+        "description": "Altera a ligação AMI do Asterisk/Issabel. A nova ligação é testada antes de ser aplicada.",
+        "data": {
+          "host": "Servidor Asterisk / Issabel",
+          "port": "Porta AMI",
+          "username": "Utilizador AMI",
+          "password": "Password AMI"
+        }
+      },
+      "ht503": {
+        "title": "Grandstream HT503",
+        "description": "Configura a leitura local do estado FXS/FXO. A ligação ao HT503 é testada antes de guardar.",
+        "data": {
+          "ht503_host": "Endereço do HT503",
+          "ht503_port": "Porta HTTP do HT503",
+          "ht503_password": "Password de administrador do HT503",
+          "ht503_poll_interval": "Intervalo de leitura do HT503"
+        },
+        "data_description": {
+          "ht503_host": "IP local ou hostname do Grandstream HT503.",
+          "ht503_password": "Password usada pela interface web do HT503.",
+          "ht503_poll_interval": "Periodicidade de leitura do estado FXS/FXO, em segundos."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Não foi possível ligar ao AMI do Asterisk.",
+      "invalid_auth": "A autenticação AMI falhou. Confirma o utilizador, password e permissões Manager.",
+      "already_configured": "Este endpoint AMI do Asterisk já está configurado.",
+      "ht503_missing_host": "Para ativar o HT503 tens de indicar primeiro o respetivo IP/hostname.",
+      "ht503_cannot_connect": "Não foi possível iniciar sessão no HT503 ou ler o estado FXS/FXO."
+    },
+    "abort": {
+      "already_configured": "Este endpoint AMI do Asterisk já está configurado.",
+      "reauth_successful": "Credenciais AMI atualizadas com sucesso.",
+      "reconfigure_successful": "Ligação AMI do Asterisk atualizada com sucesso."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do Asterisk",
+        "description": "Altera os protocolos, extensões e entidades. As opções do HT503 aparecem num passo separado quando o ativares.",
+        "data": {
+          "discover_pjsip": "Descobrir endpoints PJSIP",
+          "discover_sip": "Descobrir peers SIP antigos (chan_sip)",
+          "selected_endpoints": "Extensões a monitorizar",
+          "extra_endpoints": "Endpoints manuais adicionais",
+          "enable_device_state": "Criar sensores de estado",
+          "enable_registered": "Criar sensores de registo",
+          "enable_connected_line": "Criar sensores de chamada ligada",
+          "enable_dtmf": "Criar sensores DTMF",
+          "enable_ht503": "Ativar Grandstream HT503"
+        }
+      },
+      "ht503": {
+        "title": "Grandstream HT503",
+        "description": "Atualiza o acesso local ao HT503 e testa a leitura FXS/FXO antes de guardar.",
+        "data": {
+          "ht503_host": "Endereço do HT503",
+          "ht503_port": "Porta HTTP do HT503",
+          "ht503_password": "Password de administrador do HT503",
+          "ht503_poll_interval": "Intervalo de leitura do HT503"
+        },
+        "data_description": {
+          "ht503_host": "IP local ou hostname do Grandstream HT503.",
+          "ht503_password": "Password usada pela interface web do HT503.",
+          "ht503_poll_interval": "Periodicidade de leitura do estado FXS/FXO, em segundos."
+        }
+      }
+    },
+    "error": {
+      "ht503_missing_host": "Para ativar o HT503 tens de indicar primeiro o respetivo IP/hostname.",
+      "ht503_cannot_connect": "Não foi possível iniciar sessão no HT503 ou ler o estado FXS/FXO."
+    }
+  }
+}

@@ -1,0 +1,25 @@
+send_action:
+  name: Send AMI action
+  description: Send an action to the selected Asterisk Manager Interface connection.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional Asterisk config entry ID. If omitted, the first loaded entry is used.
+      required: false
+      selector:
+        text:
+    action:
+      name: Action
+      description: AMI action name, for example Ping, Originate or PJSIPQualify.
+      required: true
+      example: "Ping"
+      selector:
+        text:
+    parameters:
+      name: Parameters
+      description: AMI action parameters as key/value pairs.
+      required: false
+      example:
+        Endpoint: "200"
+      selector:
+        object:
