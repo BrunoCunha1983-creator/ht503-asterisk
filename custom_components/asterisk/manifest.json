@@ -1,0 +1,21 @@
+{
+  "domain": "asterisk",
+  "name": "Asterisk AMI + HT503",
+  "codeowners": [
+    "@BrunoCunha1983-creator"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/BrunoCunha1983-creator/ht503-asterisk",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/BrunoCunha1983-creator/ht503-asterisk/issues",
+  "loggers": [
+    "asterisk.ami",
+    "custom_components.asterisk"
+  ],
+  "requirements": [
+    "asterisk-ami>=0.1.7"
+  ],
+  "version": "2.0.0-beta.3"
+}
