@@ -1,0 +1,11 @@
+; Exemplo para Asterisk autónomo. Em Issabel/FreePBX, preserva os includes e
+; altera as opções pela interface ou por ficheiros custom suportados.
+[general]
+enabled=yes
+bindaddr=0.0.0.0
+bindport=8088
+tlsenable=yes
+tlsbindaddr=0.0.0.0:8089
+tlscertfile=/etc/asterisk/keys/asterisk.crt
+tlsprivatekey=/etc/asterisk/keys/asterisk.key
+

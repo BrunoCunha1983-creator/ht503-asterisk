@@ -1,0 +1,9 @@
+; Troca HOME_ASSISTANT_IP e usa uma palavra-passe forte.
+; Não abras a porta 5038 na Internet.
+[homeassistant]
+secret=ALTERAR_PARA_UMA_PALAVRA_PASSE_FORTE
+deny=0.0.0.0/0.0.0.0
+permit=HOME_ASSISTANT_IP/255.255.255.255
+read=system,call,reporting,dtmf
+write=originate,call
+

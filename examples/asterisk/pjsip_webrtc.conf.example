@@ -1,0 +1,33 @@
+; Exemplo para Asterisk autónomo. Não dupliques a extensão 2003 se o Issabel
+; já a tiver criado. Nesse caso, aplica os equivalentes nas opções avançadas.
+
+[transport-wss]
+type=transport
+protocol=wss
+bind=0.0.0.0
+
+[2003]
+type=aor
+max_contacts=5
+remove_existing=yes
+
+[2003]
+type=auth
+auth_type=userpass
+username=2003
+password=ALTERAR_PARA_UMA_PALAVRA_PASSE_FORTE
+
+[2003]
+type=endpoint
+aors=2003
+auth=2003
+context=from-internal
+disallow=all
+allow=opus,ulaw,alaw
+webrtc=yes
+dtls_auto_generate_cert=yes
+direct_media=no
+force_rport=yes
+rewrite_contact=yes
+rtp_symmetric=yes
+

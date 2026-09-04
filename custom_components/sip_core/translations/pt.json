@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Instala o motor SIP e o cartão Asterisk Console BC. A configuração é concluída nas opções da integração.",
+        "title": "Asterisk Console BC"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "sip_config": "Configuração SIP/Asterisk"
+        },
+        "data_description": {
+          "sip_config": "Objeto completo de configuração: servidor WSS, PBX, ICE, toques, contas SIP e opções do pop-up."
+        },
+        "title": "Configuração do Asterisk Console BC"
+      }
+    }
+  }
+}

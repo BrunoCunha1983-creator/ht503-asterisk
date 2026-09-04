@@ -1,0 +1,898 @@
+import { LitElement, html, css } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import { sipCore, CALLSTATE, AUDIO_DEVICE_KIND } from "./sip-core";
+import { AudioVisualizer } from "./audio-visualizer";
+
+interface Extension {
+    name: string;
+    extension: string;
+    camera_entity: string | null;
+    stream_name?: string | null;
+    go2rtc_stream?: string | null;
+    go2rtc_url?: string | null;
+    go2rtc_stream_url?: string | null;
+    go2rtc_ingress?: boolean | null;
+    go2rtc_addon_slug?: string | null;
+    live_provider?: string | null;
+}
+
+enum ButtonType {
+    SERVICE_CALL = "service_call",
+    DTMF = "dtmf"
+}
+
+interface Button {
+    label: string;
+    icon: string;
+    type: ButtonType;
+    data: any;
+}
+
+interface PopupConfig {
+    buttons: Button[];
+    extensions: { [key: string]: Extension };
+    large: boolean | undefined;
+    auto_open: boolean;
+    hide_header_button?: boolean;
+}
+
+const DEFAULT_AUDIO_DEVICE_ID = "__default__";
+
+@customElement("sip-call-dialog")
+class SIPCallDialog extends LitElement {
+    @property()
+    public open = false;
+
+    @property()
+    public configuratorOpen = false;
+
+    @state()
+    private outputDevices: MediaDeviceInfo[] = [];
+
+    @state()
+    private inputDevices: MediaDeviceInfo[] = [];
+
+    @property()
+    public hass = sipCore.hass;
+
+    @property()
+    public config = sipCore.config.popup_config as PopupConfig;
+
+    @state()
+    private audioVisualizer: AudioVisualizer | undefined;
+
+    @state()
+    private buttonListenerActive = false;
+
+    @state()
+    private currentCamera: string = "";
+
+    @state()
+    private cameraImageCacheBuster = Date.now();
+
+    @state()
+    private cameraStreamFailed = false;
+
+    @state()
+    private go2rtcIngressFrameUrl = "";
+
+    @state()
+    private go2rtcIngressFailed = false;
+
+    private go2rtcIngressKey = "";
+
+    private cameraRefreshInterval: number | undefined;
+
+    constructor() {
+        super();
+        this.setupButton();
+
+        // bind openPopup and closePopup to this instance
+        this.openPopup = this.openPopup.bind(this);
+        this.closePopup = this.closePopup.bind(this);
+    }
+
+    static get styles() {
+        return css`
+            ha-icon[slot="meta"] {
+                width: 18px;
+                height: 18px;
+            }
+
+            ha-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #audioVisualizer {
+                min-height: 10em;
+                white-space: nowrap;
+                align-items: center;
+                display: flex;
+                justify-content: center;
+                padding-top: 2em;
+            }
+
+            #audioVisualizer div {
+                display: inline-block;
+                width: 3px;
+                height: 100px;
+                margin: 0 7px;
+                background: currentColor;
+                transform: scaleY(0.5);
+                opacity: 0.25;
+            }
+
+            ha-dialog {
+                --dialog-content-padding: 0;
+                --mdc-dialog-min-width: 600px;
+            }
+
+            ha-dialog[large] {
+                --dialog-content-padding: 0;
+                --mdc-dialog-min-width: 90vw;
+                --mdc-dialog-max-width: 90vw;
+                --mdc-dialog-max-height: 90vh;
+            }
+
+            ha-camera-stream {
+                height: 100%;
+                width: 100%;
+                display: block;
+            }
+
+            hui-image {
+                width: 100%;
+                display: block;
+            }
+
+            .sip-camera-image {
+                display: block;
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                background: #000;
+            }
+
+            .sip-camera-frame {
+                display: block;
+                width: 100%;
+                height: 100%;
+                min-height: 320px;
+                border: 0;
+                background: #000;
+                overflow: hidden;
+            }
+
+            #remoteVideo {
+                height: 100%;
+                width: 100%;
+            }
+
+            @media (max-width: 600px), (max-height: 600px) {
+                ha-dialog {
+                    --dialog-surface-margin-top: 0px;
+                    --mdc-dialog-min-width: calc(100vw - env(safe-area-inset-right) - env(safe-area-inset-left));
+                    --mdc-dialog-max-width: calc(100vw - env(safe-area-inset-right) - env(safe-area-inset-left));
+                    --mdc-dialog-min-height: 100%;
+                    --mdc-dialog-max-height: 100%;
+                    --vertical-align-dialog: flex-end;
+                    --ha-dialog-border-radius: 0;
+                }
+            }
+
+            .accept-button {
+                color: var(--label-badge-green);
+            }
+
+            .deny-button {
+                color: var(--label-badge-red);
+            }
+
+            .deny-button,
+            .accept-button,
+            .audio-button {
+                --mdc-icon-button-size: 64px;
+                --mdc-icon-size: 32px;
+            }
+
+            .row {
+                display: flex;
+                flex-direction: row;
+                justify-content: space-between;
+            }
+
+            .bottom-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 12px 16px;
+                border-top: 1px solid var(--divider-color);
+            }
+
+            .content {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 300px;
+                width: 100%;
+            }
+
+            .form {
+                display: flex;
+                flex-direction: column;
+                padding: 16px;
+            }
+
+            ha-select {
+                margin: 8px 0;
+            }
+        `;
+    }
+
+    updateHandler = (event: any) => {
+        this.requestUpdate();
+
+        if (sipCore.remoteVideoStream !== null) {
+            const videoElement = this.renderRoot.querySelector("#remoteVideo") as HTMLVideoElement;
+            if (videoElement && videoElement.srcObject !== sipCore.remoteVideoStream) {
+                videoElement.srcObject = sipCore.remoteVideoStream;
+                videoElement.play();
+            }
+        } else {
+            const videoElement = this.renderRoot.querySelector("#remoteVideo") as HTMLVideoElement;
+            if (videoElement) {
+                videoElement.srcObject = null;
+                videoElement.pause();
+            }
+        }
+        this.updateButtonState();
+    };
+
+    connectedCallback() {
+        super.connectedCallback();
+        window.addEventListener("sipcore-update", this.updateHandler);
+
+        if (this.config.auto_open !== false) {
+            window.addEventListener("sipcore-call-started", this.openPopup);
+            window.addEventListener("sipcore-call-ended", this.closePopup);
+        } else {
+            window.addEventListener("sipcore-call-started", this.updateHandler);
+            window.addEventListener("sipcore-call-ended", this.updateHandler);
+        }
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        window.removeEventListener("sipcore-update", this.updateHandler);
+        this.stopCameraRefresh();
+
+        if (this.config.auto_open !== false) {
+            window.removeEventListener("sipcore-call-started", this.openPopup);
+            window.removeEventListener("sipcore-call-ended", this.closePopup);
+        } else {
+            window.removeEventListener("sipcore-call-started", this.updateHandler);
+            window.removeEventListener("sipcore-call-ended", this.updateHandler);
+        }
+    }
+
+    openPopup() {
+        this.open = true;
+        this.requestUpdate();
+    }
+
+    closePopup() {
+        this.open = false;
+        this.stopCameraRefresh();
+        this.go2rtcIngressKey = "";
+        this.go2rtcIngressFrameUrl = "";
+        this.go2rtcIngressFailed = false;
+        this.requestUpdate();
+    }
+
+    private ensureCameraRefresh(camera: string) {
+        if (this.currentCamera !== camera) {
+            this.currentCamera = camera;
+            this.cameraImageCacheBuster = Date.now();
+        }
+
+        if (this.cameraRefreshInterval !== undefined) return;
+
+        this.cameraRefreshInterval = window.setInterval(() => {
+            if (!this.open || !this.currentCamera || sipCore.callState === CALLSTATE.IDLE) {
+                this.stopCameraRefresh();
+                return;
+            }
+
+            this.cameraImageCacheBuster = Date.now();
+            this.requestUpdate();
+        }, 1000);
+    }
+
+    private stopCameraRefresh() {
+        if (this.cameraRefreshInterval === undefined) return;
+
+        window.clearInterval(this.cameraRefreshInterval);
+        this.cameraRefreshInterval = undefined;
+    }
+
+    private getCameraImageUrl(camera: string) {
+        const stateObj = this.hass?.states?.[camera];
+        const entityPicture = stateObj?.attributes?.entity_picture as string | undefined;
+        const accessToken = stateObj?.attributes?.access_token as string | undefined;
+        const baseUrl = entityPicture || `/api/camera_proxy/${camera}${accessToken ? `?token=${accessToken}` : ""}`;
+        const separator = baseUrl.includes("?") ? "&" : "?";
+
+        return `${baseUrl}${separator}sipcore_ts=${this.cameraImageCacheBuster}`;
+    }
+
+    private getGo2RTCFrameUrl(extension?: Extension) {
+        const streamName = extension?.stream_name || extension?.go2rtc_stream || "";
+        const configuredUrl = extension?.go2rtc_stream_url || extension?.go2rtc_url || "";
+        if (!streamName || !configuredUrl) return "";
+
+        let url = configuredUrl.trim();
+        if (!url) return "";
+
+        if (url.includes("/api/homekit")) {
+            url = url.split("/api/homekit")[0];
+        } else if (url.includes("/api/webtorrent")) {
+            url = url.split("/api/webtorrent")[0];
+        }
+
+        if (!url.includes("stream.html")) {
+            url = `${url.replace(/\/$/, "")}/stream.html`;
+        }
+
+        const separator = url.includes("?") ? "&" : "?";
+        const mode = extension?.live_provider === "webrtc" ? "webrtc" : "mse";
+
+        return `${url}${separator}src=${encodeURIComponent(streamName)}&mode=${encodeURIComponent(mode)}&width=100%`;
+    }
+
+    private async ensureGo2RTCIngressFrameUrl(extension?: Extension) {
+        const streamName = extension?.stream_name || extension?.go2rtc_stream || "";
+        if (!this.hass || !streamName || !extension?.go2rtc_ingress) return;
+
+        const mode = extension?.live_provider === "webrtc" ? "webrtc" : "mse";
+        const key = `${streamName}|${mode}`;
+        if (this.go2rtcIngressKey === key && (this.go2rtcIngressFrameUrl || this.go2rtcIngressFailed)) return;
+
+        this.go2rtcIngressKey = key;
+        this.go2rtcIngressFrameUrl = "";
+        this.go2rtcIngressFailed = false;
+
+        try {
+            const sessionResult = await this.hass.callWS({
+                type: "supervisor/api",
+                endpoint: "/ingress/session",
+                method: "post",
+            });
+
+            const session = sessionResult?.session;
+            if (!session) throw new Error("Supervisor did not return an ingress session");
+
+            document.cookie =
+                `ingress_session=${session}; path=/; SameSite=Lax` +
+                (window.location.protocol === "https:" ? "; Secure" : "");
+
+            let ingressUrl = extension?.go2rtc_stream_url || extension?.go2rtc_url || "";
+
+            if (!ingressUrl) {
+                const configuredSlug = extension?.go2rtc_addon_slug || "";
+                let addonInfo: any = undefined;
+
+                if (configuredSlug) {
+                    try {
+                        addonInfo = await this.hass.callWS({
+                            type: "supervisor/api",
+                            endpoint: `/addons/${configuredSlug}/info`,
+                            method: "get",
+                        });
+                    } catch (err) {
+                        console.warn(`SIP-Core go2rtc add-on slug ${configuredSlug} failed, trying auto-discovery`, err);
+                    }
+                }
+
+                if (!addonInfo) {
+                    const addonsResult = await this.hass.callWS({
+                        type: "supervisor/api",
+                        endpoint: "/addons",
+                        method: "get",
+                    });
+
+                    const addons = addonsResult?.addons || [];
+                    const go2rtcAddon = addons.find((addon: any) => {
+                        const slug = String(addon?.slug || "").toLowerCase();
+                        const name = String(addon?.name || "").toLowerCase();
+                        return slug.includes("go2rtc") || name.includes("go2rtc");
+                    });
+
+                    if (go2rtcAddon?.slug) {
+                        addonInfo = await this.hass.callWS({
+                            type: "supervisor/api",
+                            endpoint: `/addons/${go2rtcAddon.slug}/info`,
+                            method: "get",
+                        });
+                    }
+                }
+
+                ingressUrl = addonInfo?.ingress_url || addonInfo?.ingress_entry || "";
+            }
+
+            if (!ingressUrl) {
+                throw new Error("No go2rtc ingress URL available. Configure go2rtc_addon_slug or go2rtc_url.");
+            }
+
+            let url = ingressUrl.trim();
+            if (url.includes("/api/homekit")) {
+                url = url.split("/api/homekit")[0];
+            } else if (url.includes("/api/webtorrent")) {
+                url = url.split("/api/webtorrent")[0];
+            }
+
+            if (!url.includes("stream.html")) {
+                url = `${url.replace(/\/$/, "")}/stream.html`;
+            }
+
+            const separator = url.includes("?") ? "&" : "?";
+
+            if (this.go2rtcIngressKey === key) {
+                this.go2rtcIngressFrameUrl = `${url}${separator}` +
+                    `src=${encodeURIComponent(streamName)}` +
+                    `&mode=${encodeURIComponent(mode)}` +
+                    `&width=100%`;
+                this.requestUpdate();
+            }
+        } catch (err) {
+            console.warn("SIP-Core could not create go2rtc Ingress session, falling back", err);
+            if (this.go2rtcIngressKey === key) {
+                this.go2rtcIngressFailed = true;
+                this.requestUpdate();
+            }
+        }
+    }
+
+    renderCameraStream(camera: string) {
+        this.hass = sipCore.hass || this.hass;
+
+        if (this.currentCamera !== camera) {
+            this.currentCamera = camera;
+            this.cameraStreamFailed = false;
+            this.go2rtcIngressKey = "";
+            this.go2rtcIngressFrameUrl = "";
+            this.go2rtcIngressFailed = false;
+            this.cameraImageCacheBuster = Date.now();
+        }
+
+        if (!this.hass?.states?.[camera]) {
+            console.warn(`Camera entity ${camera} was not found, cannot render SIP call camera stream.`);
+            return html``;
+        }
+
+        const extension = this.config.extensions[sipCore.remoteExtension || ""];
+        const streamName = extension?.stream_name || extension?.go2rtc_stream || "";
+        const go2rtcFrameUrl = this.getGo2RTCFrameUrl(extension);
+
+        if (extension?.go2rtc_ingress && streamName && !this.go2rtcIngressFailed) {
+            this.stopCameraRefresh();
+            this.ensureGo2RTCIngressFrameUrl(extension);
+
+            if (this.go2rtcIngressFrameUrl) {
+                return html`
+                    <iframe
+                        class="sip-camera-frame"
+                        src=${this.go2rtcIngressFrameUrl}
+                        allow="autoplay; fullscreen; microphone; camera"
+                    ></iframe>
+                `;
+            }
+
+            return html`
+                <img
+                    class="sip-camera-image"
+                    alt=""
+                    src=${this.getCameraImageUrl(camera)}
+                />
+            `;
+        }
+
+        if (go2rtcFrameUrl) {
+            this.stopCameraRefresh();
+
+            return html`
+                <iframe
+                    class="sip-camera-frame"
+                    src=${go2rtcFrameUrl}
+                    allow="autoplay; fullscreen; microphone; camera"
+                ></iframe>
+            `;
+        }
+
+        this.ensureCameraRefresh(camera);
+
+        return html`
+            <img
+                class="sip-camera-image"
+                alt=""
+                src=${this.getCameraImageUrl(camera)}
+            />
+        `;
+    }
+
+    render() {
+        const outputOptions = [
+            { value: DEFAULT_AUDIO_DEVICE_ID, label: "Default Output" },
+            ...this.outputDevices.map((device) => ({
+                value: device.deviceId,
+                label: device.label || "Audio output",
+            })),
+        ];
+        const inputOptions = [
+            { value: DEFAULT_AUDIO_DEVICE_ID, label: "Default Input" },
+            ...this.inputDevices.map((device) => ({
+                value: device.deviceId,
+                label: device.label || "Audio input",
+            })),
+        ];
+        this.hass = sipCore.hass || this.hass;
+        this.config = (sipCore.config?.popup_config || this.config) as PopupConfig;
+
+        let camera: string = "";
+        let statusText;
+        let phoneIcon: string;
+        let remoteName = this.config?.extensions[sipCore.remoteExtension || ""]?.name || sipCore.remoteName;
+
+        switch (sipCore.callState) {
+            case CALLSTATE.IDLE:
+                statusText = "No active call";
+                phoneIcon = "mdi:phone";
+                break;
+            case CALLSTATE.INCOMING:
+                statusText = "Incoming call from " + remoteName;
+                phoneIcon = "mdi:phone-incoming";
+                break;
+            case CALLSTATE.OUTGOING:
+                statusText = "Outgoing call to " + remoteName;
+                phoneIcon = "mdi:phone-outgoing";
+                break;
+            case CALLSTATE.CONNECTED:
+                statusText = "Connected to " + remoteName;
+                phoneIcon = "mdi:phone-in-talk";
+                break;
+            case CALLSTATE.CONNECTING:
+                statusText = "Connecting to " + remoteName;
+                phoneIcon = "mdi:phone";
+                break;
+            default:
+                statusText = "Unknown call state";
+                phoneIcon = "mdi:phone";
+                break;
+        }
+
+        if (
+            sipCore.callState !== CALLSTATE.IDLE &&
+            sipCore.remoteExtension !== null &&
+            sipCore.remoteVideoStream === null
+        ) {
+            camera = this.config.extensions[sipCore.remoteExtension]?.camera_entity || "";
+            if (!camera) {
+                if (sipCore.remoteAudioStream !== null) {
+                    if (this.audioVisualizer === undefined) {
+                        this.audioVisualizer = new AudioVisualizer(this.renderRoot, sipCore.remoteAudioStream, 16);
+                    }
+                } else {
+                    this.audioVisualizer = undefined;
+                }
+            }
+        }
+
+        return html`
+            ${this.configuratorOpen ? html`
+                <ha-dialog open @closed=${() => {
+                    this.configuratorOpen = false;
+                    if (!this.open) this.closePopup();
+                }} prevent-scrim-close data-domain="camera" ?large=${this.config.large}>
+                    <ha-dialog-header slot="header">
+                        <ha-icon-button
+                            slot="navigationIcon"
+                            label="Back"
+                            data-dialog="close">
+                            <ha-icon .icon=${"mdi:arrow-left"}></ha-icon>
+                        </ha-icon-button>
+                        <span slot="title" .title="Call">SIP Call Settings</span>
+                    </ha-dialog-header>
+                    <div tabindex="-1" dialogInitialFocus class="form">
+                        <ha-select
+                            naturalMenuWidth
+                            fixedMenuPosition
+                            icon
+                            label=${"Audio Output"}
+                            .value=${sipCore.AudioOutputId ?? DEFAULT_AUDIO_DEVICE_ID}
+                            .options=${outputOptions}
+                            @selected=${this.handleAudioOutputChange}
+                            @closed="${(event: { stopPropagation: () => any }) => event.stopPropagation()}">
+                        </ha-select>
+                        <ha-select
+                            naturalMenuWidth
+                            fixedMenuPosition
+                            icon
+                            label=${"Audio Input"}
+                            .value=${sipCore.AudioInputId ?? DEFAULT_AUDIO_DEVICE_ID}
+                            .options=${inputOptions}
+                            @selected=${this.handleAudioInputChange}
+                            @closed="${(event: { stopPropagation: () => any }) => event.stopPropagation()}">
+                        </ha-select>
+                        <ha-settings-row>
+                            <span slot="heading">Logged in as ${sipCore.user.ha_username} <span style="color: gray;">(${sipCore.user.extension})</span></span>
+                            <span slot="description">The current user used to log in to the SIP server. You can configure users in the SIP Core options</span>
+                        </ha-settings-row>
+                        <ha-settings-row>
+                            <span slot="heading">Is ${sipCore.registered ? "registered" : "not registered"} <span style="color: gray;">(${sipCore.registered ? "true" : "false"})</span></span>
+                            <span slot="description">The current registration status of the SIP client. If not registered, check browser console and Asterisk logs for more information</span>
+                        </ha-settings-row>
+                        <ha-settings-row>
+                            <span slot="heading">Call state is ${sipCore.callState}</span>
+                            <span slot="description">The current call state of the SIP client</span>
+                        </ha-settings-row>
+                        <ha-settings-row>
+                            <span slot="heading">SIP-Core <span style="color: gray;">v${sipCore.version}</span></span>
+                            <span slot="description">The main SIP call system, created by Jordy Kuhne</span>
+                        </ha-settings-row>
+                    </div>
+                </ha-dialog>
+            ` : ``}
+
+            <ha-dialog ?open=${this.open} @closed=${
+            this.closePopup
+        } data-domain="camera" ?large=${this.config.large}>
+                <ha-dialog-header slot="header">
+                    <ha-icon-button
+                        data-dialog="close"
+                        slot="navigationIcon"
+                        label="Close">
+                        <ha-icon .icon=${"mdi:close"}></ha-icon>
+                    </ha-icon-button>
+                    <div slot="title" class="row">
+                        <span>${statusText}</span>
+                        <span style="color: gray;">${sipCore.callDuration}</span>
+                    </div>
+                    <ha-icon-button
+                        dialogAction="settings"
+                        slot="actionItems"
+                        label="Settings"
+                        @click="${async () => {
+                            this.configuratorOpen = false;
+                            await this.updateComplete;
+                            this.outputDevices = await sipCore.getAudioDevices(AUDIO_DEVICE_KIND.OUTPUT);
+                            this.inputDevices = await sipCore.getAudioDevices(AUDIO_DEVICE_KIND.INPUT);
+                            this.configuratorOpen = true;
+                            this.requestUpdate();
+                        }}">
+                        <ha-icon .icon=${"mdi:cog-outline"}></ha-icon>
+                    </ha-icon-button>
+                    <ha-dropdown
+                        slot="actionItems"
+                        placement="bottom-end"
+                        @closed="${(event: { stopPropagation: () => any }) => event.stopPropagation()}"
+                    >
+                        <ha-icon-button
+                            slot="trigger"
+                            label="More">
+                            <ha-icon .icon=${"mdi:dots-vertical"}></ha-icon>
+                        </ha-icon-button>
+                        <ha-dropdown-item
+                            @click="${() => {
+                                window.open("https://tech7fox.github.io/sip-hass-docs", "_blank");
+                            }}">
+                            <ha-icon slot="icon" .icon=${"mdi:bookshelf"}></ha-icon>
+                            Documentation
+                        </ha-dropdown-item>
+                        <ha-dropdown-item
+                            @click="${() => {
+                                window.open("https://github.com/TECH7Fox/sipcore-hass-integration", "_blank");
+                            }}">
+                            <ha-icon slot="icon" .icon=${"mdi:github"}></ha-icon>
+                            Github
+                        </ha-dropdown-item>
+                    </ha-dropdown>
+                </ha-dialog-header>
+                <div tabindex="-1" dialogInitialFocus>
+                    <div class="content">
+                        <div id="audioVisualizer" style="display: ${
+                            sipCore.callState !== CALLSTATE.IDLE && !camera && sipCore.remoteVideoStream === null
+                                ? "block"
+                                : "none"
+                        }"></div>
+                        <video poster="noposter" style="display: ${
+                            sipCore.remoteVideoStream === null ? "none" : "block"
+                        }" playsinline id="remoteVideo"></video>
+                        ${
+                            sipCore.callState === CALLSTATE.IDLE
+                                ? html`
+                                      <div>
+                                          <span>No active call</span>
+                                      </div>
+                                  `
+                                : camera
+                                ? this.renderCameraStream(camera)
+                                : ""
+                        }
+                    </div>
+                    <div class="bottom-row">
+                        <ha-icon-button
+                            class="accept-button"
+                            label="Answer call"
+                            @click="${() => sipCore.answerCall()}">
+                            <ha-icon .icon=${phoneIcon}></ha-icon>
+                        </ha-icon-button>
+                        <div>
+                            ${this.config.buttons.map((button) => {
+                                if (button.type === ButtonType.SERVICE_CALL) {
+                                    return html`
+                                        <ha-icon-button
+                                            class="audio-button"
+                                            label="${button.label}"
+                                            @click="${() => {
+                                                const { domain, service, ...service_data } = button.data;
+                                                this.hass.callService(domain, service, service_data);
+                                            }}"
+                                        >
+                                            <ha-icon .icon=${button.icon}></ha-icon>
+                                        </ha-icon-button>
+                                    `;
+                                } else if (button.type === ButtonType.DTMF) {
+                                    return html`
+                                        <ha-icon-button
+                                            class="audio-button"
+                                            label="${button.label}"
+                                            @click="${() => {
+                                                sipCore.RTCSession?.sendDTMF(button.data);
+                                            }}"
+                                        >
+                                            <ha-icon .icon=${button.icon}></ha-icon>
+                                        </ha-icon-button>
+                                    `;
+                                }
+                            })}
+                        </div>
+                        <div>
+                            <ha-icon-button
+                                class="audio-button"
+                                label="Mute audio"
+                                ?disabled="${sipCore.RTCSession === null}"
+                                @click="${() => {
+                                    if (sipCore.RTCSession?.isMuted().audio)
+                                        sipCore.RTCSession?.unmute({ audio: true });
+                                    else sipCore.RTCSession?.mute({ audio: true });
+                                    this.requestUpdate();
+                                }}">
+                                <ha-icon
+                                    .icon="${
+                                        sipCore.RTCSession !== null && sipCore.RTCSession?.isMuted().audio
+                                            ? "mdi:microphone-off"
+                                            : "mdi:microphone"
+                                    }"
+                                </ha-icon>
+                            </ha-icon-button>
+                            <ha-icon-button
+                                class="audio-button"
+                                label="Mute video"
+                                style="display: ${sipCore.config.sip_video ? "block" : "none"}"
+                                ?disabled="${sipCore.RTCSession === null}"
+                                @click="${() => {
+                                    if (sipCore.RTCSession?.isMuted().video)
+                                        sipCore.RTCSession?.unmute({ video: true });
+                                    else sipCore.RTCSession?.mute({ video: true });
+                                    this.requestUpdate();
+                                }}">
+                                <ha-icon
+                                    .icon="${
+                                        sipCore.RTCSession !== null && sipCore.RTCSession?.isMuted().video
+                                            ? "mdi:video-off"
+                                            : "mdi:video"
+                                    }"
+                                ></ha-icon>
+                            </ha-icon-button>
+                        </div>
+                        <ha-icon-button
+                            class="deny-button"
+                            label="End call"
+                            @click="${() => {
+                                sipCore.endCall();
+                                this.closePopup();
+                            }}">
+                            <ha-icon .icon=${"mdi:phone-off"}></ha-icon>
+                        </ha-icon-button>
+                    </div>
+                </div>
+            </ha-dialog>
+        `;
+    }
+
+    async firstUpdated() {
+
+    }
+
+    private selectedAudioDeviceId(event: Event): string | null {
+        const selected = event as CustomEvent<{ value?: string }>;
+        const target = event.target as HTMLSelectElement;
+        const value = selected.detail?.value ?? target.value;
+        return !value || value === DEFAULT_AUDIO_DEVICE_ID ? null : value;
+    }
+
+    private handleAudioInputChange(event: Event) {
+        sipCore.AudioInputId = this.selectedAudioDeviceId(event);
+        this.requestUpdate();
+    }
+
+    private handleAudioOutputChange(event: Event) {
+        sipCore.AudioOutputId = this.selectedAudioDeviceId(event);
+        this.requestUpdate();
+    }
+
+    setupButton() {
+        // Check if the header button should be hidden
+        if (this.config.hide_header_button === true) {
+            console.debug("Header button is disabled by configuration");
+            return;
+        }
+
+        const homeAssistant = document.getElementsByTagName("home-assistant")[0];
+        const panel = homeAssistant?.shadowRoot
+            ?.querySelector("home-assistant-main")
+            ?.shadowRoot?.querySelector("ha-panel-lovelace");
+
+        if (panel === null) {
+            console.debug("panel not found!");
+            return;
+        }
+
+        const actionItems = panel?.shadowRoot?.querySelector("hui-root")?.shadowRoot?.querySelector(".action-items");
+
+        if (actionItems?.querySelector("#sipcore-call-button")) {
+            return;
+        }
+
+        const callButton = document.createElement("ha-icon-button") as any;
+        callButton.label = "Open Call Popup";
+        const icon = document.createElement("ha-icon") as any;
+        icon.style = "display: flex; align-items: center; justify-content: center;";
+        (icon as any).icon = "mdi:phone";
+        callButton.slot = "actionItems";
+        callButton.id = "sipcore-call-button";
+        callButton.appendChild(icon);
+        callButton.addEventListener("click", () => {
+            this.open = true;
+            this.requestUpdate();
+        });
+        actionItems?.appendChild(callButton);
+
+        if (!this.buttonListenerActive) {
+            this.buttonListenerActive = true;
+            window.addEventListener("location-changed", () => {
+                console.debug("View changed, setting up button again...");
+                this.setupButton();
+            });
+        }
+        this.updateButtonState();
+    }
+
+    private updateButtonState() {
+        const homeAssistant = document.getElementsByTagName("home-assistant")[0];
+        const panel = homeAssistant?.shadowRoot
+            ?.querySelector("home-assistant-main")
+            ?.shadowRoot?.querySelector("ha-panel-lovelace");
+
+        const actionItems = panel?.shadowRoot?.querySelector("hui-root")?.shadowRoot?.querySelector(".action-items");
+        const callButton = actionItems?.querySelector("#sipcore-call-button") as HTMLElement;
+
+        if (callButton) {
+            if (sipCore.registered) {
+                callButton.style.color = "";
+            } else {
+                callButton.style.color = "var(--label-badge-red)";
+            }
+        }
+    }
+}

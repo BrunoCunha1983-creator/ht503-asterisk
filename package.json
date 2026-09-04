@@ -1,0 +1,44 @@
+{
+  "name": "asterisk-ha-card-bc",
+  "version": "5.2.0-bc.1",
+  "description": "Asterisk/Issabel softphone and status console for Home Assistant",
+  "main": "sipjs-card.js",
+  "scripts": {
+    "build": "webpack --progress --config webpack.config.js --mode production",
+    "watch": "webpack --progress --config webpack.config.js --mode development --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BrunoCunha1983-creator/ht503-asterisk.git"
+  },
+  "keywords": [
+    "sip",
+    "home-assistant"
+  ],
+  "author": "Jordy Kuhne; BC adaptation",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/BrunoCunha1983-creator/ht503-asterisk"
+  },
+  "homepage": "https://github.com/BrunoCunha1983-creator/ht503-asterisk#readme",
+  "devDependencies": {
+    "ts-loader": "^9.5.2",
+    "tslib": "^2.3.1",
+    "typescript": "^4.9.5",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^4.10.0"
+  },
+  "dependencies": {
+    "jssip": "^3.10.6",
+    "lit": "^2.8.0"
+  },
+  "prettier": {
+    "singleQuote": false,
+    "semi": true,
+    "trailingComma": "all",
+    "printWidth": 120,
+    "tabWidth": 4,
+    "useTabs": false,
+    "bracketSpacing": true
+  }
+}

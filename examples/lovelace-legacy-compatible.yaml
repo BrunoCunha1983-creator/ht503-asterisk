@@ -1,0 +1,16 @@
+# Compatível com o formato do antigo custom:sipjs-client-card.
+# Estes dados são apenas um exemplo; substitui-os pelos valores reais.
+type: custom:asterisk-console-card
+title: Asterisk / Issabel
+server: PBX_IP_OU_NOME:8090
+ringtone: /local/ringtone.mp3
+client: "1"
+clients:
+  "1":
+    aor: sip:2003@PBX_IP_OU_NOME
+    username: "2003"
+    password: "ALTERAR_PALAVRA_PASSE"
+
+auto_discover: true
+show_keypad: true
+show_server_status: true

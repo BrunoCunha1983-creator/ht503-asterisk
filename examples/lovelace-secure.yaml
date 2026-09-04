@@ -1,0 +1,24 @@
+# Modo recomendado: servidor e credenciais ficam nas opções da integração.
+type: custom:asterisk-console-card
+title: Central telefónica
+auto_discover: true
+show_keypad: true
+show_server_status: true
+
+# Se a descoberta automática não encontrar os nomes corretos, ajusta-os aqui.
+endpoints:
+  "2003":
+    name: Home Assistant
+    icon: mdi:home-assistant
+  "201":
+    name: Telefone analógico HT503
+    icon: mdi:phone-classic
+  "299":
+    name: Porta FXO do HT503
+    icon: mdi:phone-incoming-outgoing
+
+quick_numbers:
+  - name: Correio de voz
+    number: "*97"
+    icon: mdi:voicemail
+

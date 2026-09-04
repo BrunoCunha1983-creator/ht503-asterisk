@@ -1,0 +1,32 @@
+pbx_server: PBX_IP_OU_NOME_DNS
+custom_wss_url: wss://PBX_IP_OU_NOME_DNS:8089/ws
+ice_config:
+  iceGatheringTimeout: 5000
+  iceCandidatePoolSize: 0
+  iceTransportPolicy: all
+  iceServers:
+    - urls:
+        - stun:stun.l.google.com:19302
+  rtcpMuxPolicy: require
+incomingRingtoneUrl: /sip_core_files/ring-tone.mp3
+outgoingRingtoneUrl: /sip_core_files/ringback-tone.mp3
+allow_backup_user: false
+backup_user:
+  ha_username: desativado
+  extension: "0000"
+  password: NAO_USADA
+users:
+  - ha_username: ID_OU_NOME_DO_UTILIZADOR_HA
+    display_name: Bruno
+    extension: "2003"
+    password: PALAVRA_PASSE_FORTE_DA_EXTENSAO
+sip_video: false
+auto_answer: false
+popup_override_component: null
+popup_config:
+  auto_open: true
+  large: false
+  hide_header_button: false
+  buttons: []
+  extensions: {}
+
